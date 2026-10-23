@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { claimAlert, playChime, pulse, unlockAudio } from "@/lib/audio"
+import { claimAlert, playChime, pulse, resumeAudio, unlockAudio } from "@/lib/audio"
 import { applySessionLink, commitPending } from "@/lib/link"
 import {
   createExampleProgrammation,
@@ -155,7 +155,10 @@ export function useTimer() {
   }, [session.status])
 
   useEffect(() => {
-    const onVis = () => setNow(Date.now())
+    const onVis = () => {
+      setNow(Date.now())
+      if (!document.hidden) resumeAudio()
+    }
     document.addEventListener("visibilitychange", onVis)
     return () => document.removeEventListener("visibilitychange", onVis)
   }, [])
@@ -252,6 +255,7 @@ export function useTimer() {
     },
     pause: () => {
       const stamp = Date.now()
+      unlockAudio()
       setNow(stamp)
       setSession((current) => pause(current, stamp))
     },
