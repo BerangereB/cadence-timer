@@ -1,14 +1,8 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { formatClock, parseStepLine } from "./duration"
-import {
-  parseNotionPageId,
-  stepsFromDatabasePages,
-  collectSteps,
-  type NotionBlock,
-  type NotionDatabasePage,
-} from "./notion"
-import { mergeProgrammations, parseProgrammationFile, type Programmation } from "./programmation"
+import { mergeProgrammations, parseProgrammationFile, sanitizeProgrammation, type Programmation } from "./programmation"
 import { advance, createSession, elapsedNow, pause, play } from "./session"
+import { loadPending, loadSettings, savePending, saveSettings } from "./storage"
 
 describe("durées", () => {
   it("lit les formats de séance", () => {
@@ -83,7 +77,7 @@ describe("minuteur", () => {
   })
 })
 
-describe("fichier et Notion", () => {
+describe("fichier", () => {
   it("fusionne par identifiant", () => {
     const current: Programmation[] = [
       { id: "a", name: "A", steps: [], updatedAt: "1", source: "local" },
@@ -99,29 +93,44 @@ describe("fichier et Notion", () => {
     expect(() => parseProgrammationFile({ version: 2 })).toThrow(/version 1/)
   })
 
-  it("extrait l’identifiant de page", () => {
-    expect(parseNotionPageId("https://www.notion.so/Seance-1429989fe25d4b4f9b0b0b0b0b0b0b0b?pvs=21")).toBe(
-      "1429989fe25d4b4f9b0b0b0b0b0b0b0b",
-    )
-    expect(parseNotionPageId("pas une page")).toBeNull()
+  it("relit une séance Notion et une séance lien", () => {
+    const notion = sanitizeProgrammation({ id: "n", name: "Ancienne", steps: [{ name: "A", durationMs: 1000 }], source: "notion", notionPageId: "page" })
+    expect(notion?.source).toBe("notion")
+    expect(notion?.notionPageId).toBe("page")
+    expect(sanitizeProgrammation({ id: "l", name: "Lien", steps: [{ name: "A", durationMs: 1000 }], source: "link" })?.source).toBe("link")
+    expect(sanitizeProgrammation({ id: "x", name: "Inconnue", steps: [{ name: "A", durationMs: 1000 }], source: "autre" })?.source).toBe("local")
   })
 
-  it("lit une base et une liste", async () => {
-    const pages: NotionDatabasePage[] = [
-      { properties: { Nom: { type: "title", title: [{ plain_text: "Suite" }] }, Ordre: { type: "number", number: 2 }, Durée: { type: "number", number: 10 } } },
-      { properties: { Nom: { type: "title", title: [{ plain_text: "Intro" }] }, Ordre: { type: "number", number: 1 }, Durée: { type: "number", number: 5 } } },
-    ]
-    expect(stepsFromDatabasePages(pages).map((step) => step.name)).toEqual(["Intro", "Suite"])
-
-    const blocks: NotionBlock[] = [
-      { id: "1", type: "bulleted_list_item", bulleted_list_item: { rich_text: [{ plain_text: "5 min — Pause" }] } },
-      { id: "db", type: "child_database" },
-    ]
-    const steps = await collectSteps(
-      "root",
-      async () => blocks,
-      async () => pages,
+  it("n’enregistre plus le jeton Notion", () => {
+    const memory = new Map<string, string>()
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => memory.set(key, value),
+      removeItem: (key: string) => memory.delete(key),
+    })
+    memory.set(
+      "cadence.settings.v1",
+      JSON.stringify({
+        warnAtPercent: 70,
+        soundEnabled: false,
+        notifySystem: true,
+        autoAdvance: false,
+        notionToken: "secret",
+        notionPageUrl: "https://www.notion.so/x",
+        autoImport: true,
+      }),
     )
-    expect(steps.map((step) => step.name)).toEqual(["Pause", "Intro", "Suite"])
+    const loaded = loadSettings()
+    expect(loaded).toEqual({ warnAtPercent: 70, soundEnabled: false, notifySystem: true, autoAdvance: false })
+    saveSettings(loaded)
+    expect(JSON.parse(memory.get("cadence.settings.v1") ?? "{}")).not.toHaveProperty("notionToken")
+    savePending({
+      programmations: [{ id: "lien", name: "Lien", steps: [{ id: "s", name: "A", durationMs: 1000 }], updatedAt: "1", source: "link" }],
+      selectId: "lien",
+      label: "Lien",
+      settings: loaded,
+    })
+    expect(loadPending()?.settings).toEqual(loaded)
+    vi.unstubAllGlobals()
   })
 })

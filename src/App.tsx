@@ -92,9 +92,9 @@ export default function App() {
           Programmation « {timer.pending.label} » reçue. Elle s’appliquera à la prochaine remise à zéro.
         </p>
       ) : null}
-      {timer.notionStatus.state !== "idle" && !timer.settingsOpen ? (
-        <p className={timer.notionStatus.state === "error" ? "text-sm text-destructive" : "text-sm text-muted-foreground"} role={timer.notionStatus.state === "error" ? "alert" : "status"}>
-          {timer.notionStatus.message}
+      {timer.notice ? (
+        <p className="text-sm text-destructive" role="alert">
+          {timer.notice}
         </p>
       ) : null}
 
@@ -102,7 +102,7 @@ export default function App() {
         <section className="rounded-3xl bg-card px-5 py-10 text-center shadow-sm ring-1 ring-foreground/8 sm:px-10">
           <h1 className="font-clock text-4xl font-light">Aucune étape pour l’instant</h1>
           <p className="mx-auto mt-3 max-w-md text-muted-foreground">
-            Découpez la séance en étapes nommées, importez un fichier JSON, ou récupérez une page Notion.
+            Découpez la séance en étapes nommées, ou importez un fichier JSON.
           </p>
           {timer.active ? (
             <Input
@@ -169,10 +169,7 @@ export default function App() {
         open={timer.settingsOpen}
         onOpenChange={timer.setSettingsOpen}
         settings={timer.settings}
-        notionStatus={timer.notionStatus}
-        pageParam={timer.pageParam}
         onChange={timer.patchSettings}
-        onImport={() => void timer.runImport(timer.pageParam || timer.settings.notionPageUrl)}
       />
     </div>
   )

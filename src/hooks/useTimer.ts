@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { claimAlert, playChime, pulse, unlockAudio } from "@/lib/audio"
-import { importProgrammationFromNotion, readPageParam } from "@/lib/notion"
+import { applySessionLink, commitPending } from "@/lib/link"
 import {
   createExampleProgrammation,
   createProgrammation,
@@ -36,14 +36,24 @@ import {
 } from "@/lib/storage"
 
 export type Banner = { id: number; kind: "warn" | "end"; text: string }
-export type NotionStatus = { state: "idle" | "loading" | "error"; message: string }
 
-const pageParam = readPageParam()
+function currentHref(): string {
+  if (typeof window === "undefined") return "https://cadence.local/"
+  return window.location.href
+}
+
+const opened = applySessionLink({
+  programmations: loadProgrammations(),
+  settings: loadSettings(),
+  session: loadSession(),
+  pending: loadPending(),
+  href: currentHref(),
+})
 
 function boot(): { session: Session; alert: { kind: "warn" | "end"; name: string; visit: number } | null } {
-  const loaded = loadSession()
-  const programmations = loadProgrammations()
-  const settings = loadSettings()
+  const loaded = opened.session
+  const programmations = opened.programmations
+  const settings = opened.settings
   if (loaded.programmationId && !programmations.some((item) => item.id === loaded.programmationId)) {
     return { session: createSession(programmations[0]?.id ?? null), alert: null }
   }
@@ -63,24 +73,19 @@ function boot(): { session: Session; alert: { kind: "warn" | "end"; name: string
 const initialBoot = boot()
 
 export function useTimer() {
-  const [programmations, setProgrammations] = useState<Programmation[]>(loadProgrammations)
-  const [settings, setSettings] = useState<Settings>(() => {
-    const loaded = loadSettings()
-    if (pageParam && !loaded.notionPageUrl) return { ...loaded, notionPageUrl: pageParam }
-    return loaded
-  })
+  const [programmations, setProgrammations] = useState<Programmation[]>(opened.programmations)
+  const [settings, setSettings] = useState<Settings>(opened.settings)
   const [session, setSession] = useState<Session>(initialBoot.session)
-  const [pending, setPending] = useState<PendingImport | null>(loadPending)
+  const [pending, setPending] = useState<PendingImport | null>(opened.pending)
   const [now, setNow] = useState(() => Date.now())
   const [banner, setBanner] = useState<Banner | null>(null)
-  const [notionStatus, setNotionStatus] = useState<NotionStatus>({ state: "idle", message: "" })
+  const [notice, setNotice] = useState(opened.error ?? "")
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   const settingsRef = useRef(settings)
   const sessionRef = useRef(session)
   const bootAlert = useRef(initialBoot.alert)
   const bannerId = useRef(0)
-  const imported = useRef(false)
 
   const active = programmations.find((item) => item.id === session.programmationId) ?? null
   const steps = active?.steps ?? noSteps
@@ -177,44 +182,6 @@ export function useTimer() {
     return true
   }, [])
 
-  const runImport = useCallback(async (page: string) => {
-    const token = settingsRef.current.notionToken.trim()
-    if (!token) {
-      setNotionStatus({ state: "error", message: "Ajoutez un jeton Notion dans les réglages pour importer la page." })
-      setSettingsOpen(true)
-      return
-    }
-    if (!page.trim()) {
-      setNotionStatus({ state: "error", message: "Indiquez l’adresse de la page Notion." })
-      setSettingsOpen(true)
-      return
-    }
-    setNotionStatus({ state: "loading", message: "Lecture de la page Notion…" })
-    try {
-      const programmation = await importProgrammationFromNotion(token, page)
-      const applied = acceptProgrammations([programmation], programmation.id, programmation.name)
-      setNotionStatus(
-        applied
-          ? { state: "idle", message: "" }
-          : { state: "idle", message: "" },
-      )
-    } catch (error) {
-      setNotionStatus({
-        state: "error",
-        message: error instanceof Error ? error.message : "Import Notion impossible.",
-      })
-    }
-  }, [acceptProgrammations])
-
-  useEffect(() => {
-    if (imported.current) return
-    imported.current = true
-    if (!settingsRef.current.autoImport) return
-    const page = pageParam || settingsRef.current.notionPageUrl
-    if (!page) return
-    void runImport(page)
-  }, [runImport])
-
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const tag = (event.target as HTMLElement | null)?.tagName
@@ -264,7 +231,7 @@ export function useTimer() {
     session,
     pending,
     banner,
-    notionStatus,
+    notice,
     settingsOpen,
     setSettingsOpen,
     active,
@@ -275,7 +242,6 @@ export function useTimer() {
     totalMs,
     elapsedTotalMs,
     busy,
-    pageParam,
     dismissBanner,
     patchSettings,
     play: () => {
@@ -291,12 +257,10 @@ export function useTimer() {
     },
     reset: () => {
       if (pending) {
-        const merged = mergeProgrammations(programmations, pending.programmations)
-        const select = pending.selectId && merged.some((item) => item.id === pending.selectId)
-          ? pending.selectId
-          : session.programmationId
-        setProgrammations(merged)
-        setSession(createSession(select))
+        const next = commitPending(programmations, session, settings, pending)
+        setProgrammations(next.programmations)
+        setSettings(next.settings)
+        setSession(next.session)
         setPending(null)
         return
       }
@@ -404,18 +368,14 @@ export function useTimer() {
       try {
         const data: unknown = JSON.parse(await file.text())
         const items = parseProgrammationFile(data)
-        acceptProgrammations(items, null, "Fichier")
+        if (acceptProgrammations(items, null, "Fichier")) setNotice("")
       } catch (error) {
         if (error instanceof SyntaxError) {
-          setNotionStatus({ state: "error", message: "Ce fichier n’est pas un JSON valide." })
+          setNotice("Ce fichier n’est pas un JSON valide.")
           return
         }
-        setNotionStatus({
-          state: "error",
-          message: error instanceof Error ? error.message : "Import impossible.",
-        })
+        setNotice(error instanceof Error ? error.message : "Import impossible.")
       }
     },
-    runImport,
   }
 }

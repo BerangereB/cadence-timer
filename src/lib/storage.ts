@@ -10,9 +10,6 @@ export type Settings = {
   soundEnabled: boolean
   notifySystem: boolean
   autoAdvance: boolean
-  notionToken: string
-  notionPageUrl: string
-  autoImport: boolean
 }
 
 const SETTINGS_KEY = "cadence.settings.v1"
@@ -25,9 +22,6 @@ export const defaultSettings: Settings = {
   soundEnabled: true,
   notifySystem: false,
   autoAdvance: true,
-  notionToken: "",
-  notionPageUrl: "",
-  autoImport: false,
 }
 
 function read(key: string): unknown {
@@ -47,8 +41,7 @@ function write(key: string, value: unknown): void {
   }
 }
 
-export function loadSettings(): Settings {
-  const raw = read(SETTINGS_KEY)
+export function settingsFromUnknown(raw: unknown): Settings {
   if (!raw || typeof raw !== "object") return { ...defaultSettings }
   const record = raw as Partial<Settings>
   const warn = Number(record.warnAtPercent)
@@ -57,10 +50,11 @@ export function loadSettings(): Settings {
     soundEnabled: record.soundEnabled !== false,
     notifySystem: record.notifySystem === true,
     autoAdvance: record.autoAdvance !== false,
-    notionToken: typeof record.notionToken === "string" ? record.notionToken : "",
-    notionPageUrl: typeof record.notionPageUrl === "string" ? record.notionPageUrl : "",
-    autoImport: record.autoImport === true,
   }
+}
+
+export function loadSettings(): Settings {
+  return settingsFromUnknown(read(SETTINGS_KEY))
 }
 
 export function saveSettings(settings: Settings): void {
@@ -114,6 +108,7 @@ export function loadPending(): PendingImport | null {
     programmations,
     selectId: typeof record.selectId === "string" ? record.selectId : null,
     label: typeof record.label === "string" ? record.label : "Import",
+    settings: record.settings && typeof record.settings === "object" ? settingsFromUnknown(record.settings) : undefined,
   }
 }
 

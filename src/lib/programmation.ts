@@ -1,3 +1,5 @@
+import type { Settings } from "./storage"
+
 export type Step = {
   id: string
   name: string
@@ -5,7 +7,7 @@ export type Step = {
   note?: string
 }
 
-export type ProgrammationSource = "local" | "notion" | "file"
+export type ProgrammationSource = "local" | "notion" | "file" | "link"
 
 export type Programmation = {
   id: string
@@ -20,6 +22,7 @@ export type PendingImport = {
   programmations: Programmation[]
   selectId: string | null
   label: string
+  settings?: Settings
 }
 
 const MAX_MS = 24 * 60 * 60 * 1000
@@ -71,7 +74,10 @@ export function sanitizeProgrammation(value: unknown): Programmation | null {
   if (steps.length !== record.steps.length) return null
   const name = typeof record.name === "string" && record.name.trim() ? record.name.trim() : "Séance"
   const id = typeof record.id === "string" && record.id.trim() ? record.id : crypto.randomUUID()
-  const source = record.source === "notion" || record.source === "file" || record.source === "local" ? record.source : "local"
+  const source =
+    record.source === "notion" || record.source === "file" || record.source === "local" || record.source === "link"
+      ? record.source
+      : "local"
   const updatedAt = typeof record.updatedAt === "string" ? record.updatedAt : new Date().toISOString()
   const notionPageId = typeof record.notionPageId === "string" ? record.notionPageId : undefined
   return { id, name, steps, updatedAt, source, notionPageId }
